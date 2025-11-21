@@ -1,5 +1,5 @@
 name: sft-gsm8k-1epoch-5steps
-desc: Run VERL SFT trainer for 1 epoch but stop after 5 steps (smoke test)
+desc: Run VERL SFT trainer for 1 epoch but stop after 5 steps
 
 cmd: |
   export PYTHONIOENCODING=utf-8
