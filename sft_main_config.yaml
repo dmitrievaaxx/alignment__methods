@@ -1,6 +1,6 @@
 # sft_main_config.yaml
-name: sft-gsm8k-1epoch-5steps
-desc: Run VERL SFT trainer for 1 epoch but stop after 5 steps
+name: sft-gsm8k-5epochs
+desc: Run VERL SFT trainer for 5 epochs
 
 cmd: |
   export PYTHONIOENCODING=utf-8
