@@ -16,7 +16,6 @@ data:
 
 model:
   partial_pretrain: "Qwen/Qwen2.5-1.5B-Instruct"
-  strategy: fsdp
   enable_gradient_checkpointing: true
   lora_rank: 8
   lora_alpha: 16
@@ -27,6 +26,7 @@ model:
     offload_params: false
   external_lib: null
   use_liger: false
+  strategy: fsdp2
 
 optim:
   lr: 1e-6
@@ -45,14 +45,14 @@ trainer:
   group: "sft-test-group"
   job_type: "sft"
   total_epochs: 5
-  total_training_steps: 5
+  total_training_steps: null
   logger: ['console', 'wandb', 'clearml']
   seed: 42
-  save_freq: 233
-  test_freq: 233
+  save_freq: -1
+  test_freq: 7
   nnodes: 1
   n_gpus_per_node: 1
-  max_ckpt_to_keep: 5
+  max_ckpt_to_keep: 30
   resume_mode: disable
   resume_from_path: null
   device: cuda
