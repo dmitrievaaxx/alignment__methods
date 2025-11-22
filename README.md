@@ -1,7 +1,5 @@
 **Запуск:**  
-```
-python -m datasphere.main project job execute -p bt1ige70pc08t7r0o6of -c sft_main_config.yaml
-```
+- organization-aikrivoshein  - `python -m datasphere.main project job execute -p bt1ige70pc08t7r0o6of -c sft_main_config.yaml`  
   
 **Как работаь с wandb:**
 - Скачать папку output.tar.gz с DataSphereJobs и достать файлик .wandb
