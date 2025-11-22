@@ -26,7 +26,7 @@ model:
     offload_params: false
   external_lib: null
   use_liger: false
-  strategy: fsdp2
+  strategy: fsdp
 
 optim:
   lr: 1e-6
