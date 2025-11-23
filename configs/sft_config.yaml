@@ -7,7 +7,7 @@ data:
   train_files: ${TRAIN_DATA}
   val_files: ${VAL_DATA}
   train_batch_size: 128
-  micro_batch_size_per_gpu: 2
+  micro_batch_size_per_gpu: 8
   max_length: 1024
   truncation: error
   multiturn:
@@ -16,6 +16,7 @@ data:
 
 model:
   partial_pretrain: "Qwen/Qwen2.5-1.5B-Instruct"
+  strategy: fsdp
   enable_gradient_checkpointing: true
   lora_rank: 8
   lora_alpha: 16
@@ -26,7 +27,6 @@ model:
     offload_params: false
   external_lib: null
   use_liger: false
-  strategy: fsdp
 
 optim:
   lr: 3e-6
@@ -41,7 +41,7 @@ trainer:
   default_local_dir: "/job/output/checkpoints"
   default_hdfs_dir: null
   project_name: "aligment-methods"
-  experiment_name: "sft_5steps_test"
+  experiment_name: "sft_5_epochs"
   group: "sft-test-group"
   job_type: "sft"
   total_epochs: 5
