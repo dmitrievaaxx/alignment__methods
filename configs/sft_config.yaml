@@ -29,7 +29,7 @@ model:
   use_liger: false
 
 optim:
-  lr: 3e-6
+  lr: 2e-5
   lr_warmup_steps_ratio: 0.03
   num_cycles: 1.0
   lr_scheduler: cosine
