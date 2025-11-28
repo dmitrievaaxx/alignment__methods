@@ -133,14 +133,14 @@ cmd: |
   # переименовывание файлов
   mv /job/train_data_* /job/train.parquet 2>/dev/null || true
   mv /job/val_data_* /job/val.parquet 2>/dev/null || true
-  mv /job/config_yaml_* /job/config.yaml 2>/dev/null || true
+  mv /job/grpo_config_yaml_* /job/grpo_config.yaml 2>/dev/null || true
  
   mkdir -p /job/verl
   mkdir -p /job/verl_config
   
   cp -r /job/verl/verl /job/verl/ 2>/dev/null || true
   
-  cp /job/config.yaml /job/verl_config/config.yaml 2>/dev/null || true
+  cp /job/grpo_config.yaml /job/verl_config/grpo_config.yaml 2>/dev/null || true
   
   VERL_SRC=$(find /job -maxdepth 1 -type d -name "verl_dir_*" -print -quit)
   if [ -n "$VERL_SRC" ]; then
@@ -155,7 +155,7 @@ cmd: |
   # проверка правильности структуры
   echo "=== ПРОВЕРКА СТРУКТУРЫ ==="
   find /job -name "main_ppo.py" -type f && echo "main_ppo.py найден - УСПЕХ"
-  find /job -name "config.yaml" -type f && echo "config.yaml найден - УСПЕХ" 
+  find /job -name "grpo_config.yaml" -type f && echo "grpo_config.yaml найден - УСПЕХ" 
   find /job -name "train.parquet" -type f && echo "train.parquet найден - УСПЕХ"
   find /job -name "val.parquet" -type f && echo "val.parquet найден - УСПЕХ"
   find /job -name "setup.py" -type f && echo "setup.py найден - УСПЕХ"
@@ -163,7 +163,8 @@ cmd: |
   
   # установка библиотек
   pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-  
+  pip install math-verify
+
   # Установка build dependencies для flash-attn
   echo "=== Установка build dependencies ==="
   pip install --upgrade pip setuptools wheel packaging ninja cmake psutil
@@ -194,7 +195,6 @@ cmd: |
     print("✓ flash-attn успешно установлен и импортируется")
   except ImportError as e:
     print(f"✗ ERROR: flash-attn не может быть импортирован: {e}")
-    print("Это критично, так как verl требует flash-attn для импорта")
     exit(1)
   PY
   
@@ -203,14 +203,14 @@ cmd: |
 
   python3 -m verl.trainer.main_ppo \
     --config-path=/job/verl_config \
-    --config-name=config 
+    --config-name=grpo_config 
     
  
 inputs:
   - train.parquet: TRAIN_DATA
   - val.parquet: VAL_DATA
   - verl: VERL_DIR
-  - config.yaml: CONFIG_YAML
+  - grpo_config.yaml: GRPO_CONFIG_YAML
 
 outputs:
   - output_dir: OUTPUT_DIR
