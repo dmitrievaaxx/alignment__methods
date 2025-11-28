@@ -1,3 +1,6 @@
+name: grpo_training
+desc: Starting GRPO training
+
 hydra:
   searchpath:
     - /job/verl/verl/trainer/config
@@ -24,28 +27,37 @@ actor_rollout_ref:
    path: "Qwen/Qwen2.5-1.5B-Instruct"
    enable_gradient_checkpointing: true
    enable_activation_offload: true # true
-   use_remove_padding: true # true
+   use_remove_padding: false # true
    use_fused_kernels: true # false
+   trust_remote_code: false
+   lora_rank: 8
+   lora_alpha: 16
+   target_modules: all-linear 
+   exclude_modules: null
+   dtype: float16
+   torch_dtype: float16
  actor:
    entropy_from_logits_with_chunking: true
    entropy_checkpointing: false # true
    ppo_mini_batch_size: 64
-   ppo_micro_batch_size_per_gpu: 2
+   ppo_micro_batch_size_per_gpu: 1
    use_dynamic_bsz: False
    ppo_max_token_len_per_gpu: 30000 # 16384 n * ${data.max_prompt_length} + ${data.max_response_length}
    grad_clip: 1.0
    clip_ratio: 0.2
+   use_remove_padding: false # true
+   use_fused_kernels: false
    policy_loss:
      loss_mode: "vanilla"
 
    entropy_coeff: 0
-   use_kl_loss: False # True for original GRPO
-   kl_loss_coef: 0.0  # for grpo
+   use_kl_loss: true # True for original GRPO
+   kl_loss_coef: 0.1  # for grpo
    ppo_epochs: 1
    loss_agg_mode: token-mean
    ulysses_sequence_parallel_size: 1 # sp size
    optim:
-     lr: 1e-6
+     lr: 2e-5
      lr_warmup_steps: 15 # Prioritized. Negative values mean delegating to lr_warmup_steps_ratio.
      lr_warmup_steps_ratio: 0.03  # the total steps will be injected during runtime
      min_lr_ratio: 0.0   # only used with cosine lr scheduler, default to 0.0
@@ -60,9 +72,11 @@ actor_rollout_ref:
      save_contents: ['model', 'optimizer', 'extra', "hf_model"]
  ref:
    log_prob_micro_batch_size_per_gpu: 2
+   use_remove_padding: false # true
+   use_fused_kernels: false
  rollout:
    temperature: 1.0
-   gpu_memory_utilization: 0.6
+   gpu_memory_utilization: 0.3
    tensor_model_parallel_size: 1
    name: vllm
    mode: sync
@@ -82,6 +96,8 @@ actor_rollout_ref:
    stop_token_ids: [151643, 151645]
    do_sample: True
    n: 8 # > 1 for grpo, rloo
+   use_remove_padding: false # true
+   use_fused_kernels: false
 
 custom_reward_function:
   path: /job/verl/verl/utils/reward_score/boxed_verify.py
@@ -97,7 +113,7 @@ trainer:
   total_epochs: 1000
   project_name: qwen2.5-1.5_grpo_alignment
   experiment_name: grpo_training
-  logger: ['console', 'wandb']
+  logger: ['console']
   log_val_generations: 0
   nnodes: 1
   n_gpus_per_node: 1
@@ -111,6 +127,7 @@ trainer:
   remove_previous_ckpt_in_save: False
   del_local_ckpt_after_load: True
   default_local_dir: /train_output
+  ray_wait_register_center_timeout: 600
   
 cmd: |
   # переименовывание файлов
@@ -147,11 +164,44 @@ cmd: |
   # установка библиотек
   pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
   
+  # Установка build dependencies для flash-attn
+  echo "=== Установка build dependencies ==="
+  pip install --upgrade pip setuptools wheel packaging ninja cmake psutil
+  
+  # Ранняя установка flash-attn (до verl, чтобы проверить совместимость)
+  echo "=== РАННЯЯ ПРОВЕРКА: установка flash-attn ==="
+  # Сначала пробуем найти готовый wheel
+  if ! pip install --no-cache-dir --no-build-isolation \
+    --extra-index-url https://wheels.vllm.ai/stable flash-attn 2>&1 | tee /tmp/flash_attn_install.log; then
+    echo "Wheel не найден, пробуем установить из исходников (это займет время)..."
+    # Для сборки из исходников нужны дополнительные зависимости
+    pip install --no-cache-dir packaging ninja
+    # Устанавливаем flash-attn с разрешением сборки из исходников
+    # --no-build-isolation критично, чтобы использовать уже установленный torch
+    if ! pip install --no-cache-dir --no-build-isolation flash-attn 2>&1 | tee -a /tmp/flash_attn_install.log; then
+      echo "ERROR: Не удалось установить flash-attn. См. /tmp/flash_attn_install.log"
+      echo "Последние строки лога:"
+      tail -30 /tmp/flash_attn_install.log
+      exit 1
+    fi
+  fi
+  
+  # Быстрая проверка импорта flash-attn
+  python - <<'PY' || exit 1
+  try:
+    from flash_attn.bert_padding import pad_input, unpad_input
+    from flash_attn.ops.triton.cross_entropy import cross_entropy_loss
+    print("✓ flash-attn успешно установлен и импортируется")
+  except ImportError as e:
+    print(f"✗ ERROR: flash-attn не может быть импортирован: {e}")
+    print("Это критично, так как verl требует flash-attn для импорта")
+    exit(1)
+  PY
+  
   cd /job/verl
   pip install -e .[vllm]
 
-  PYTHONPATH=/job/verl:$PYTHONPATH torchrun --standalone --nnodes=1 --nproc_per_node=1 \
-    -m verl.trainer.main_ppo \
+  python3 -m verl.trainer.main_ppo \
     --config-path=/job/verl_config \
     --config-name=config 
     
@@ -166,3 +216,4 @@ outputs:
   - output_dir: OUTPUT_DIR
   
 cloud-instance-type: g1.1
+
