@@ -1,0 +1,64 @@
+# dft_main_config.yaml
+name: dft-test
+desc: Run DFT trainer for test
+
+cmd: |
+  export PYTHONIOENCODING=utf-8
+  export LANG=C.UTF-8
+  export PIP_ROOT_USER_ACTION=ignore
+  export WANDB_MODE=offline
+  export WANDB_DIR=/job/output/wandb
+  export CLEARML_API_HOST=https://api.clear.ml
+  export CLEARML_WEB_HOST=https://app.clear.ml
+  export CLEARML_FILES_HOST=https://files.clear.ml
+  export CLEARML_API_ACCESS_KEY="1115V427IJEV3GB0UZMCHFD8XPCLO9"
+  export CLEARML_API_SECRET_KEY="3k9gBL0lsd9iKBzHvaUpjwXOYtgI7HObE9De98qMDnrBQ0WZQrwITY9Q2PcR4kWWmPs"
+
+  echo "Installing packages..."
+  pip install --upgrade pip
+  pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+  pip install packaging ninja wheel setuptools psutil
+  pip install flash-attn --no-build-isolation --no-cache-dir --extra-index-url https://wheels.vllm.ai/stable
+  pip install omegaconf clearml
+  pip install -r "${REQUIREMENTS_FILE}"
+  
+  mkdir -p /job
+  cp -r "${VERL_DIR}" /job/verl
+  mkdir -p /job/output/wandb /job/output/checkpoints
+  cd /job/verl
+
+  mkdir -p /job/verl/trainer/config
+  cp "${CONFIG_FILE}" /job/verl/trainer/config/dft_config.yaml
+  cd /job/verl
+
+  echo "/Launching DFT training for test..."
+  PYTHONPATH=/job:$PYTHONPATH \
+    torchrun --standalone --nnodes=1 --nproc_per_node=1 \
+    -m verl.trainer.fsdp_dft_trainer \
+    --config-path=/job/verl/trainer/config \
+    --config-name=dft_config \
+    data.train_files="${TRAIN_DATA}" \
+    data.val_files="${VAL_DATA}"
+
+  echo "Packaging outputs..."
+  mkdir -p "${OUTPUT_DIR}"
+  find /job/output/wandb -type l -delete || true
+  rm -rf /job/output/wandb/wandb/latest-run || true
+  cd /job/output
+  tar -czf /job/output/output.tar.gz checkpoints wandb training_completed.txt 2>/dev/null || tar -czf /job/output/output.tar.gz checkpoints wandb 2>/dev/null
+  cp /job/output/output.tar.gz "${OUTPUT_DIR}/"
+  echo "Archive created: ${OUTPUT_DIR}/output.tar.gz"
+  tar -tf "${OUTPUT_DIR}/output.tar.gz" | head -20
+  echo "All files prepared for download"
+
+inputs:
+  - data/sft_train.parquet: TRAIN_DATA
+  - data/sft_val.parquet: VAL_DATA
+  - verl/verl: VERL_DIR
+  - verl/requirements.txt: REQUIREMENTS_FILE
+  - configs/dft_config.yaml: CONFIG_FILE
+
+outputs:
+  - output_dir/output.tar.gz: OUTPUT_DIR
+
+cloud-instance-type: g1.1
