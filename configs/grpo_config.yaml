@@ -1,0 +1,128 @@
+hydra:
+  searchpath:
+    - /job/verl/verl/trainer/config
+
+defaults:
+  - ppo_trainer
+  - _self_
+
+data:
+  train_files: /job/train.parquet
+  val_files: /job/val.parquet
+  max_prompt_length: 1024
+  max_response_length: 1024
+  train_batch_size: 256
+  filter_overlong_prompts: True
+  apply_chat_template_kwargs: {}
+  filter_overlong_prompts_workers: 8
+  prompt_key: prompt
+  reward_fn_key: data_source
+  return_raw_chat: True
+
+actor_rollout_ref:
+ model:
+   path: "Qwen/Qwen2.5-Math-1.5B"
+   enable_gradient_checkpointing: true
+   enable_activation_offload: true 
+   use_remove_padding: true 
+   use_fused_kernels: true 
+   trust_remote_code: false
+   lora_rank: 8
+   lora_alpha: 16
+   target_modules: all-linear 
+   exclude_modules: null
+   dtype: float16
+   torch_dtype: float16
+ actor:
+   entropy_from_logits_with_chunking: true
+   entropy_checkpointing: true 
+   ppo_mini_batch_size: 32
+   ppo_micro_batch_size_per_gpu: 1
+   use_dynamic_bsz: True
+   ppo_max_token_len_per_gpu: 2048 
+   grad_clip: 1.0
+   clip_ratio: 0.2
+   use_remove_padding: true
+   use_fused_kernels: false
+   policy_loss:
+     loss_mode: "vanilla"
+
+   entropy_coeff: 0
+   use_kl_loss: false
+   kl_loss_coef: 0.1 
+   ppo_epochs: 1
+   loss_agg_mode: token-mean
+   ulysses_sequence_parallel_size: 1 
+   optim:
+     lr: 2e-5
+     lr_warmup_steps: 15 
+     lr_warmup_steps_ratio: 0.03  
+     min_lr_ratio: 0.0   
+     num_cycles: 0.5     
+     warmup_style: constant 
+   strategy: fsdp2
+   fsdp_config:
+     offload_policy: false 
+     param_offload: false 
+     optimizer_offload: true 
+   checkpoint:
+     save_contents: ['model', 'optimizer', 'extra', "hf_model"]
+ ref:
+   log_prob_micro_batch_size_per_gpu: 1
+   use_remove_padding: true 
+   use_fused_kernels: false
+ rollout:
+   temperature: 1.0
+   gpu_memory_utilization: 0.6
+   tensor_model_parallel_size: 1
+   name: vllm
+   mode: sync
+   top_p: 1
+   top_k: -1
+   ignore_eos: False
+   enforce_eager: true
+   free_cache_engine: true
+   multi_stage_wake_up: false
+   load_format: safetensors
+   max_num_batched_tokens: 16000
+   max_model_len: 2048 
+   prompt_length: 1024 
+   response_length: 1024 
+   max_num_seqs: 256
+   log_prob_micro_batch_size_per_gpu: 1
+   stop_token_ids: [151643, 151645]
+   do_sample: True
+   n: 8
+   use_remove_padding: true 
+   use_fused_kernels: false
+   dtype: float16
+
+custom_reward_function:
+  path: /job/verl/verl/utils/reward_score/boxed_verify.py
+  name: compute_score
+
+algorithm:
+  adv_estimator: grpo 
+  use_kl_in_reward: False
+
+trainer:
+  balance_batch: True
+  total_training_steps: 1202
+  total_epochs: 1000
+  project_name: qwen2.5-1.5_grpo_alignment
+  experiment_name: grpo_training
+  logger: ['console', 'wandb', 'clearml']
+  log_val_generations: 0
+  nnodes: 1
+  n_gpus_per_node: 1
+  save_freq: 153
+  test_freq: 153
+  val_before_train: False
+  critic_warmup: 0
+  max_actor_ckpt_to_keep: 10
+  resume_mode: disable 
+  resume_from_path: null
+  remove_previous_ckpt_in_save: False
+  del_local_ckpt_after_load: True
+  default_local_dir: /train_output
+  ray_wait_register_center_timeout: 1200

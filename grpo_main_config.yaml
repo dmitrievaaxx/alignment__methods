@@ -1,0 +1,95 @@
+# grpo_main_config.yaml
+name: grpo_training
+desc: Starting GRPO training
+
+cmd: |
+  export WANDB_MODE=offline
+  export WANDB_DIR=/job/output/wandb
+  export CLEARML_API_HOST=https://api.clear.ml
+  export CLEARML_WEB_HOST=https://app.clear.ml
+  export CLEARML_FILES_HOST=https://files.clear.ml
+  export CLEARML_API_ACCESS_KEY="1115V427IJEV3GB0UZMCHFD8XPCLO9"
+  export CLEARML_API_SECRET_KEY="3k9gBL0lsd9iKBzHvaUpjwXOYtgI7HObE9De98qMDnrBQ0WZQrwITY9Q2PcR4kWWmPs"
+
+  mv /job/train_data_* /job/train.parquet 2>/dev/null || true
+  mv /job/val_data_* /job/val.parquet 2>/dev/null || true
+  mv /job/grpo_config_yaml_* /job/grpo_config.yaml 2>/dev/null || true
+ 
+  mkdir -p /job/verl
+  mkdir -p /job/verl_config
+  mkdir -p /job/output/wandb /job/output/checkpoints
+  
+  cp -r /job/verl/verl /job/verl/ 2>/dev/null || true
+  
+  cp /job/grpo_config.yaml /job/verl_config/grpo_config.yaml 2>/dev/null || true
+  
+  VERL_SRC=$(find /job -maxdepth 1 -type d -name "verl_dir_*" -print -quit)
+  if [ -n "$VERL_SRC" ]; then
+    echo "Найдена исходная папка VERL: $VERL_SRC"
+    rm -rf /job/verl/* 2>/dev/null || true
+    cp -r "$VERL_SRC"/* /job/verl/ 2>/dev/null || true
+    echo "Содержимое $VERL_SRC скопировано в /job/verl/"
+  else
+    echo "Используем существующую папку /job/verl"
+  fi
+
+  pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+  pip install math-verify
+  pip install wandb clearml
+
+  echo "=== Установка build dependencies ==="
+  pip install --upgrade pip setuptools wheel packaging ninja cmake psutil
+  
+  echo "=== РАННЯЯ ПРОВЕРКА: установка flash-attn ==="
+  if ! pip install --no-cache-dir --no-build-isolation \
+    --extra-index-url https://wheels.vllm.ai/stable flash-attn 2>&1 | tee /tmp/flash_attn_install.log; then
+    echo "Wheel не найден, пробуем установить из исходников (это займет время)..."
+    pip install --no-cache-dir packaging ninja
+    if ! pip install --no-cache-dir --no-build-isolation flash-attn 2>&1 | tee -a /tmp/flash_attn_install.log; then
+      echo "ERROR: Не удалось установить flash-attn. См. /tmp/flash_attn_install.log"
+      echo "Последние строки лога:"
+      tail -30 /tmp/flash_attn_install.log
+      exit 1
+    fi
+  fi
+  
+  python - <<'PY' || exit 1
+  try:
+    from flash_attn.bert_padding import pad_input, unpad_input
+    from flash_attn.ops.triton.cross_entropy import cross_entropy_loss
+    print("✓ flash-attn успешно установлен и импортируется")
+  except ImportError as e:
+    print(f"✗ ERROR: flash-attn не может быть импортирован: {e}")
+    exit(1)
+  PY
+  
+  cd /job/verl
+  pip install -e .[vllm]
+
+  python3 -m verl.trainer.main_ppo \
+    --config-path=/job/verl_config \
+    --config-name=grpo_config 
+
+  echo "Packaging outputs..."
+  mkdir -p /job/output/final_output
+  find /job/output/wandb -type l -delete || true
+  rm -rf /job/output/wandb/wandb/latest-run || true
+  cd /job/output
+  tar -czf /job/output/output.tar.gz checkpoints wandb training_completed.txt 2>/dev/null || tar -czf /job/output/output.tar.gz checkpoints wandb 2>/dev/null
+  cp /job/output/output.tar.gz /job/output/final_output/
+  echo "Archive created: /job/output/final_output/output.tar.gz"
+  tar -tf /job/output/final_output/output.tar.gz | head -20
+  echo "All files prepared for download"  
+    
+ 
+inputs:
+  - data/grpo_train.parquet: TRAIN_DATA
+  - data/grpo_val.parquet: VAL_DATA
+  - verl: VERL_DIR
+  - configs/grpo_config.yaml: GRPO_CONFIG_YAML
+
+outputs:
+  - /job/output/final_output/output.tar.gz: OUTPUT_DIR
+  
+cloud-instance-types: g2.1
+
